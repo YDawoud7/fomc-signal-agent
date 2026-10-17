@@ -79,13 +79,15 @@ def cmd_validate(args) -> None:
 
         results["FOMC-RoBERTa (fine-tuned)"] = evaluate(test.label, RobertaClassifier().predict(test.sentence))
 
-    provider = make_provider(args.provider, args.model, DATA / "llm_cache")
     batches = [list(test.sentence[i : i + 25]) for i in range(0, len(test), 25)]
-    with ThreadPoolExecutor(args.workers) as pool:
-        preds = [lab for out in pool.map(lambda b: label_sentences(provider, b), batches) for lab in out]
-    results[f"LLM ({provider.model})"] = evaluate(test.label, preds)
-    results["_usage"] = provider.usage.__dict__
-
+    usage = {}
+    for model in (args.model or "").split(",") if args.model else [None]:
+        provider = make_provider(args.provider, model, DATA / "llm_cache")
+        with ThreadPoolExecutor(args.workers) as pool:
+            preds = [lab for out in pool.map(lambda b: label_sentences(provider, b), batches) for lab in out]
+        results[f"LLM ({provider.model})"] = evaluate(test.label, preds)
+        usage[provider.model] = provider.usage.__dict__
+    results["_usage"] = usage
     (RESULTS / "validation.json").write_text(json.dumps(results, indent=2))
     lines = ["| Classifier | Accuracy | Macro F1 |", "| --- | ---: | ---: |"]
     for k, v in results.items():
@@ -254,7 +256,8 @@ def main(argv=None) -> None:
 
     def llm_args(sp):
         sp.add_argument("--provider", default="anthropic", choices=["anthropic", "openai", "claude-code"])
-        sp.add_argument("--model", default=None, help="override the provider's default model")
+        sp.add_argument("--model", default=None,
+                        help="override the provider's default model (validate accepts a comma-separated list)")
         sp.add_argument("--workers", type=int, default=4)
         sp.add_argument("--roberta", action="store_true", help="also run the FOMC-RoBERTa baseline")
 
