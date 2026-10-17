@@ -60,7 +60,7 @@ All numbers below come from `fomc-signal all --provider claude-code --model haik
 | LLM, Claude Haiku, zero-shot | **0.681** | **0.665** |
 | LLM, Claude Sonnet, zero-shot | 0.651 | 0.635 |
 
-With no training data, the LLM beats a classifier trained on four times as many labelled sentences. The smaller model did better than the larger one. Sonnet labelled more hawkish sentences as neutral, so the bigger model isn't automatically the better labeller. For context, the dataset's authors report a macro F1 of about 0.71 for their fine-tuned RoBERTa.
+With no training data, the LLM beats a classifier trained on four times as many labelled sentences. The smaller model did better than the larger one. Sonnet labelled more hawkish sentences as neutral, so the bigger model isn't automatically the better labeller. The fine-tuned FOMC-RoBERTa baseline is wired in (`--roberta`) but wasn't part of this run.
 
 ### 2. The stance tracks, and leads, policy
 
