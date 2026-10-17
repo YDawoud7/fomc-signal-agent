@@ -54,7 +54,7 @@ def fetch_fred(series: list[str], out_dir: Path) -> pd.DataFrame:
 
 def cmd_fetch(args) -> None:
     print("Downloading FOMC statements ...")
-    st = fetch_statements(start_year=args.start_year, cache_dir=DATA / "raw")
+    st = fetch_statements(start_year=args.start_year, cache_dir=DATA / "raw", offline=getattr(args, "offline", False))
     st.to_csv(DATA / "statements.csv", index=False)
     print(f"  {len(st)} statements, {st['date'].min():%Y-%m-%d} to {st['date'].max():%Y-%m-%d}")
     print("Downloading market data from FRED ...")
@@ -260,6 +260,7 @@ def main(argv=None) -> None:
 
     f = sub.add_parser("fetch")
     f.add_argument("--start-year", type=int, default=2000)
+    f.add_argument("--offline", action="store_true", help="rebuild statements.csv from cached HTML only")
     v = sub.add_parser("validate")
     llm_args(v)
     s = sub.add_parser("score")

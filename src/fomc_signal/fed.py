@@ -103,6 +103,13 @@ def _paragraph_texts(node) -> list[str]:
     return out
 
 
+def _is_link_title(p: str) -> bool:
+    """Titles of related releases and attachments rather than statement text."""
+    if re.search(r"\(\d+ KB PDF\)", p):
+        return True
+    return len(p.split()) < 15 and not re.search(r"[.!?:]\W*$", p)
+
+
 def extract_text(html: str) -> str:
     """Statement body as plain paragraphs separated by blank lines."""
     soup = BeautifulSoup(html, "html.parser")
@@ -115,7 +122,7 @@ def extract_text(html: str) -> str:
     out, seen = [], set()
     for p in paras:
         p = re.sub(r"\s+", " ", p).strip()
-        if not p or _BOILERPLATE.search(p) or p in seen:
+        if not p or _BOILERPLATE.search(p) or p in seen or _is_link_title(p):
             continue
         seen.add(p)
         out.append(p)
@@ -128,10 +135,13 @@ def _get(url: str, timeout: float = 30) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
-def _cached_get(url: str, cache_dir: Path, pause: float) -> str:
-    name = re.sub(r"[^A-Za-z0-9]+", "_", url.replace(BASE, "")).strip("_") + ".html"
-    path = cache_dir / name
-    if path.exists():
+def cache_name(url: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", url.replace(BASE, "")).strip("_") + ".html"
+
+
+def _cached_get(url: str, cache_dir: Path, pause: float, refresh: bool = False) -> str:
+    path = cache_dir / cache_name(url)
+    if path.exists() and not refresh:
         return path.read_text()
     html = _get(url)
     path.write_text(html)
@@ -139,14 +149,17 @@ def _cached_get(url: str, cache_dir: Path, pause: float) -> str:
     return html
 
 
-def fetch_statements(start_year: int = 2000, cache_dir: str | Path = "data/raw", pause: float = 0.3) -> pd.DataFrame:
+def fetch_statements(start_year: int = 2000, cache_dir: str | Path = "data/raw", pause: float = 0.3,
+                     offline: bool = False) -> pd.DataFrame:
     """Download every FOMC statement from ``start_year`` on.
 
-    Raw HTML is cached, so re-running only fetches new statements.
+    Raw HTML is cached, so re-running only fetches new statements. The
+    calendar page is re-downloaded each time to pick up new meetings unless
+    ``offline`` is set, in which case everything comes from the cache.
     """
     cache = Path(cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
-    cal_html = _get(CALENDAR)
+    cal_html = _cached_get(CALENDAR, cache, pause, refresh=not offline)
     links = statement_links(cal_html)
     first_cal_year = min(calendar_years(cal_html))
     for year in range(start_year, first_cal_year):

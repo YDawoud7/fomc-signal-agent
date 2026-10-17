@@ -210,21 +210,36 @@ class OpenAIProvider(Provider):
 
 @dataclass
 class ClaudeCodeProvider(Provider):
-    """Uses the local ``claude`` CLI (Claude Code) in non-interactive print mode."""
+    """Uses the local ``claude`` CLI (Claude Code) in non-interactive print mode.
+
+    Runs with tools disabled, no MCP servers and no saved session, and passes
+    the schema through ``--json-schema`` so the CLI returns validated
+    structured output. Lets the pipeline run on a Claude subscription without
+    an API key.
+    """
 
     model: str = "haiku"
     name: str = "claude-code"
 
     def _call(self, system, user, schema, temperature):
-        prompt = (f"{system}\n\n{user}\n\nReply with a single JSON object that matches this JSON schema, "
-                  f"and nothing else:\n{json.dumps(schema)}")
-        proc = subprocess.run(["claude", "-p", prompt, "--output-format", "json", "--model", self.model],
-                              capture_output=True, text=True, timeout=300)
+        cmd = ["claude", "-p", user, "--system-prompt", system, "--json-schema", json.dumps(schema),
+               "--output-format", "json", "--model", self.model, "--tools", "", "--strict-mcp-config",
+               "--no-session-persistence"]
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env, cwd="/tmp" if os.path.isdir("/tmp") else None)
         if proc.returncode != 0:
-            raise LLMError(f"claude CLI failed: {proc.stderr[:300]}")
+            raise LLMError(f"claude CLI failed: {(proc.stderr or proc.stdout)[:300]}")
         envelope = json.loads(proc.stdout)
+        if envelope.get("is_error"):
+            raise LLMError(f"claude CLI error: {str(envelope.get('result'))[:300]}")
         u = envelope.get("usage", {})
-        return extract_json(envelope.get("result", "")), u.get("input_tokens", 0), u.get("output_tokens", 0)
+        inp = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+        with _LOCK:
+            self.usage.cost_usd += float(envelope.get("total_cost_usd") or 0.0)
+        out = envelope.get("structured_output")
+        if out is None:
+            out = extract_json(envelope.get("result", ""))
+        return out, inp, u.get("output_tokens", 0)
 
 
 def make_provider(name: str, model: str | None = None, cache_dir: str | Path = "data/llm_cache") -> Provider:
