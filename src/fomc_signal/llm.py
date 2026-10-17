@@ -22,6 +22,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -42,6 +43,9 @@ class LLMError(RuntimeError):
     pass
 
 
+_LOCK = threading.Lock()
+
+
 @dataclass
 class Usage:
     calls: int = 0
@@ -51,11 +55,16 @@ class Usage:
     cost_usd: float = 0.0
 
     def add(self, model: str, inp: int, out: int) -> None:
-        self.calls += 1
-        self.input_tokens += inp
-        self.output_tokens += out
         p_in, p_out = PRICES.get(model, (0.0, 0.0))
-        self.cost_usd += (inp * p_in + out * p_out) / 1e6
+        with _LOCK:
+            self.calls += 1
+            self.input_tokens += inp
+            self.output_tokens += out
+            self.cost_usd += (inp * p_in + out * p_out) / 1e6
+
+    def hit(self) -> None:
+        with _LOCK:
+            self.cached += 1
 
 
 def validate(obj: Any, schema: dict) -> list[str]:
@@ -119,7 +128,7 @@ class Provider:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         path = self.cache_dir / f"{self._key(system, user, run)}.json"
         if path.exists():
-            self.usage.cached += 1
+            self.usage.hit()
             return json.loads(path.read_text())["output"]
 
         last_err = None
